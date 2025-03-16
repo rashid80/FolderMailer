@@ -1,15 +1,10 @@
-﻿class FolderMailerService
+﻿using FolderMailer;
+
+class FolderMailerService(FolderScannerComponent folderScannerComponent, EmailSenderComponent emailSenderComponent)
 {
 
-    private readonly FolderScannerComponent folderScanner;
-    private readonly EmailSenderComponent emailSender;
-
-    public FolderMailerService(FolderScannerComponent folderScannerComponent, EmailSenderComponent emailSenderComponent)
-    {
-        folderScanner = folderScannerComponent;
-        emailSender = emailSenderComponent;
-    }
-
+    private readonly FolderScannerComponent folderScanner = folderScannerComponent;
+    private readonly EmailSenderComponent emailSender = emailSenderComponent;
 
     public void StartMonitoring()
     {
@@ -18,7 +13,7 @@
             var files = folderScanner.GetNewFiles();
             foreach (var file in files)
             {
-                TryToProcessingFile(file);
+                ProcessingFile(file);
             }
 
             // Ожидание перед следующим опросом
@@ -26,23 +21,19 @@
         }
     }
 
-    private void TryToProcessingFile(String file)
-    {
-        try
-        {
-            ProcessingFile(file);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Ошибка при обработке файла {file}: {ex.Message}");
-        }
-    }
-
     private void ProcessingFile(String file)
     {
-        emailSender.SendEmail(file);
-        folderScanner.MoveToSent(file);
-        Console.WriteLine($"Файл {file} успешно отправлен и перемещен.");
+        if (!emailSender.SendEmailSafety(file))
+        {
+            return;
+        }
+
+        if (!folderScanner.MoveToSentSafety(file))
+        {
+            return;
+        }
+
+        ConsoleLogger.Debug($"Файл {file} успешно отправлен и перемещен.");
     }
 }
 

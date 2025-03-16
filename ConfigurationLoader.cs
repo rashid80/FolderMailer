@@ -1,32 +1,27 @@
-﻿using FolderMailer.Model;
+﻿using FolderMailer;
+using FolderMailer.Model;
 using Microsoft.Extensions.Configuration;
+using System.Text.Encodings.Web;
 using System.Text.Json;
-using Microsoft.Extensions.Configuration;
 
 public class ConfigurationLoader
 {
     private const String CONFIGURATION_FILE_NAME = "appsettings.json";
 
-    private readonly IConfiguration configuration;
+    private IConfiguration? configuration;
+
+    public FolderWatcherSettings FolderWatcherSettings { get; private set; }
+    public SmtpSettings SmtpSettings { get; private set; }
+
+    public bool IsConfigFileCreated { get; private set; } = false;
 
     public ConfigurationLoader()
     {
-        configuration = LoadConfiguration();
+        LoadConfiguration();
+        ValidateConfiguration();
     }
 
-    // Метод для получения настроек FolderWatcher
-    public FolderWatcherSettings GetFolderWatcherSettings()
-    {
-        return configuration.GetSection("FolderWatcher").Get<FolderWatcherSettings>();
-    }
-
-    // Метод для получения настроек SmtpSettings
-    public SmtpSettings GetSmtpSettings()
-    {
-        return configuration.GetSection("SmtpSettings").Get<SmtpSettings>();
-    }
-
-    private IConfiguration LoadConfiguration()
+    private void LoadConfiguration()
     {
         var configFilePath = Path.Combine(Directory.GetCurrentDirectory(), CONFIGURATION_FILE_NAME);
 
@@ -34,40 +29,71 @@ public class ConfigurationLoader
         if (!File.Exists(configFilePath))
         {
             CreateDefaultConfigurationFile(configFilePath);
+            IsConfigFileCreated = true;
+            return;
         }
 
         // Загрузка конфигурации
-        return new ConfigurationBuilder()
+        configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile(CONFIGURATION_FILE_NAME, optional: true, reloadOnChange: true)
             .Build();
+
+        FolderWatcherSettings = configuration.GetSection("FolderWatcher").Get<FolderWatcherSettings>()!;
+        SmtpSettings = configuration.GetSection("Smtp").Get<SmtpSettings>()!;
+
+        ValidateConfiguration();
+    }
+
+    private void ValidateConfiguration()
+    {
+        if (FolderWatcherSettings!.SearchPatterns.Length == 0)
+        {
+            throw new ArgumentException("Пустая маска файлов в блоке FolderWatcherSettings");
+        }
     }
 
     private void CreateDefaultConfigurationFile(String configFilePath)
     {
+
+        FolderWatcherSettings = new FolderWatcherSettings(
+            FolderPath: "C:\\watch",
+            PollingInterval: 60*1000, // 1 минута
+            SentFolder: "sent",
+            FilePatterns: "*.xls,*.xlsx"
+        );
+
+        SmtpSettings = new SmtpSettings(
+            Server: "smtp.example.com",
+            Port: 587,
+            Username: "user@example.com",
+            Password: "password",
+            FromEmail: "from@example.com",
+            FromName: "Имя отправителя",
+            ToEmail: "to@example.com",
+            ToName: "Имя получателя",
+            SubjectTemplate: "Заказ {0}",
+            BodyTemplate: "Сформирован новый заказ: {0}"
+        );
+
+        // Создаем объект конфигурации
         var defaultConfig = new
         {
-            FolderWatcher = new
-            {
-                FolderPath = "C:\\watch",
-                PollingInterval = 5000,
-                SentFolder = "sent"
-            },
-            SmtpSettings = new
-            {
-                Server = "smtp.example.com",
-                Port = 587,
-                Username = "user@example.com",
-                Password = "password",
-                From = "user@example.com",
-                SubjectTemplate = "New file: {0}",
-                BodyTemplate = "Please find attached the file: {0}"
-            }
+            FolderWatcher = FolderWatcherSettings,
+            Smtp = SmtpSettings
         };
 
-        var configurationJson = JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions { WriteIndented = true });
+        // Настройки сериализации
+        var options = new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // Разрешаем русские символы
+            WriteIndented = true // Читаемый JSON с отступами
+        };
+
+        // Сериализуем в JSON
+        var configurationJson = JsonSerializer.Serialize(defaultConfig, options);
 
         File.WriteAllText(configFilePath, configurationJson);
-        Console.WriteLine($"Создан файл {configFilePath} конфигурации с настройками по умолчанию: {configurationJson}");
+        ConsoleLogger.Debug($"Создан файл {configFilePath} с настройками по умолчанию: {Environment.NewLine}{configurationJson}");
     }
 }

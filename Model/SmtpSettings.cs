@@ -5,7 +5,10 @@
         int Port,
         string Username,
         string Password,
-        string From,
+        string FromEmail,
+        string FromName,
+        string ToEmail,
+        string ToName,
         string SubjectTemplate,
         string BodyTemplate);
 }

@@ -1,30 +1,50 @@
-﻿using FolderMailer.Model;
-using System.IO;
+﻿using FolderMailer;
+using FolderMailer.Model;
 
-public class FolderScannerComponent
+public class FolderScannerComponent(FolderWatcherSettings folderWatcherSettings)
 {
-    private readonly FolderWatcherSettings settings;
+    private readonly FolderWatcherSettings settings = folderWatcherSettings;
 
-    public FolderScannerComponent(FolderWatcherSettings folderWatcherSettings)
-    {
-        settings = folderWatcherSettings;
-    }
+    private readonly string sentFolder = Path.Combine(folderWatcherSettings.FolderPath, folderWatcherSettings.SentFolder);
 
     public string[] GetNewFiles()
     {
         CreateDirectoryIfNeeded(settings.FolderPath);
 
-        return Directory.GetFiles(settings.FolderPath);
+        // Ищем файлы по нескольким маскам
+        return settings.SearchPatterns
+            .SelectMany(pattern => Directory.GetFiles(settings.FolderPath, pattern))
+            .Distinct() // Убираем дубликаты, если файл подходит под несколько масок
+            .ToArray();
     }
 
-    public void MoveToSent(string filePath)
+    public bool MoveToSentSafety(string filePath)
     {
-        var sentFolder = Path.Combine(settings.FolderPath, settings.SentFolder);
+        try
+        {
+            MoveToSent(filePath);
+            ConsoleLogger.Success($"Файл {filePath} успешно перемешен в папку {sentFolder}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ConsoleLogger.Error($"ERR: Не удалось переместить файл {filePath} в папку {sentFolder} по причине: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void MoveToSent(string filePath)
+    {
         CreateDirectoryIfNeeded(sentFolder);
 
         var fileName = Path.GetFileName(filePath);
         var destFile = Path.Combine(sentFolder, fileName);
-        File.Move(filePath, destFile);
+
+        // Копируем файл с перезаписью
+        File.Copy(filePath, destFile, overwrite: true);
+
+        // Удаляем исходный файл
+        File.Delete(filePath);
     }
 
     public int GetPollingInterval()
@@ -32,7 +52,7 @@ public class FolderScannerComponent
         return settings.PollingInterval;
     }
 
-    private void CreateDirectoryIfNeeded(String directory)
+    private void CreateDirectoryIfNeeded(string directory)
     {
         if (!Directory.Exists(directory))
         {

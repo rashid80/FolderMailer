@@ -1,46 +1,65 @@
-﻿using FolderMailer.Model;
+﻿using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
+using FolderMailer.Model;
+using FolderMailer;
 
-public class EmailSenderComponent
+public class EmailSenderComponent(SmtpSettings smtpSettings)
 {
-    private readonly SmtpSettings settings;
+    private const int sendEmailWaiting = 1000;
+    
+    private readonly SmtpSettings settings = smtpSettings;
 
-    public EmailSenderComponent(SmtpSettings smtpSettings)
+
+    public bool SendEmailSafety(string filePath)
     {
-        settings = smtpSettings;
+        try
+        {
+            SendEmail(filePath);
+            ConsoleLogger.Success($"Файл {filePath} успешно отправлен на адрес: {settings.ToEmail}");
+            return true;
+        }
+        catch (Exception ex) {
+            ConsoleLogger.Error($"ERR: Не удалось отправить файл {filePath} по причине: {ex.Message}");
+            return false;
+        }
     }
 
-    public void SendEmail(string filePath)
+    private void SendEmail(string filePath)
     {
-        //var message = new MimeMessage();
-        //message.From.Add(new MailboxAddress("FolderWatcher", _settings.From));
-        //message.To.Add(new MailboxAddress("Recipient", _settings.From));
-        //message.Subject = string.Format(_settings.SubjectTemplate, Path.GetFileName(filePath));
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(settings.FromName, settings.FromEmail));
+        message.To.Add(new MailboxAddress(settings.ToName, settings.ToEmail));
+        message.Subject = string.Format(settings.SubjectTemplate, Path.GetFileName(filePath));
 
-        //var body = new TextPart("plain")
-        //{
-        //    Text = string.Format(_settings.BodyTemplate, Path.GetFileName(filePath))
-        //};
+        var body = new TextPart("plain")
+        {
+            Text = string.Format(settings.BodyTemplate, Path.GetFileName(filePath))
+        };
 
-        //var attachment = new MimePart("application", "octet-stream")
-        //{
-        //    Content = new MimeContent(File.OpenRead(filePath)),
-        //    ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
-        //    ContentTransferEncoding = ContentEncoding.Base64,
-        //    FileName = Path.GetFileName(filePath)
-        //};
 
-        //var multipart = new Multipart("mixed");
-        //multipart.Add(body);
-        //multipart.Add(attachment);
+        using var fileStream = File.OpenRead(filePath);
+        var attachment = new MimePart("application", "octet-stream")
+        {
+            Content = new MimeContent(fileStream),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64,
+            FileName = Path.GetFileName(filePath)
+        };
 
-        //message.Body = multipart;
+        var multipart = new Multipart("mixed")
+        {
+            body,
+            attachment
+        };
+        message.Body = multipart;
 
-        //using (var client = new SmtpClient())
-        //{
-        //    client.Connect(_settings.Server, _settings.Port, SecureSocketOptions.StartTls);
-        //    client.Authenticate(_settings.Username, _settings.Password);
-        //    client.Send(message);
-        //    client.Disconnect(true);
-        //}
+        using var client = new SmtpClient();
+        client.Connect(settings.Server, settings.Port, SecureSocketOptions.StartTls);
+        client.Authenticate(settings.Username, settings.Password);
+        client.Send(message);
+        client.Disconnect(true);
+
+        Thread.Sleep(sendEmailWaiting);
     }
 }
