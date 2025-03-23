@@ -5,3 +5,6 @@
 /.vs
 /bin/Debug/net8.0
 /obj
+/bin/Release
+/Properties/PublishProfiles/FolderProfile.pubxml.user
+/FolderMailer.csproj.user
